@@ -10,6 +10,7 @@ openai
 anthropic
 google-generativeai
 groq
+google.genai
 
 # Tokenization
 tiktoken

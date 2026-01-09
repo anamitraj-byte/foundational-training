@@ -113,7 +113,7 @@ def main():
 
     except Exception as e:
         print(f"\n❌ Unexpected error: {str(e)}\n")
-    print(answers)
+
     file_handler.push_answers(answers, OUTPUT_FILE_PATH)
 
     
