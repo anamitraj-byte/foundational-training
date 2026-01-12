@@ -5,6 +5,7 @@ This repository consists of 14 days of training assignments that helped with und
 
 ## Before running any code
 `` pip install -r requirements.txt `` \
-Define a .env file with your own API key for Gemini
+Define a .env file with your own API key for Gemini, Hugging Face, and Groq
+
 ## Contributor
 Anamitra Joshi
