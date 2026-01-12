@@ -1,16 +1,16 @@
 from typing import Tuple
 from gem import chat_gemini
 from groq import chat_groq
-from hf import chat_huggingface
+from hf import chat_open_source
 def chat(
     prompt: str,
     provider: str
 ) -> Tuple[str | None, str | None]:
     try:
         if provider == "groq":
-            return chat_groq(prompt)
+            return chat_open_source(prompt, provider)
         elif provider == "huggingface":
-            return chat_huggingface(prompt)
+            return chat_open_source(prompt, provider)
         elif provider == "gemini":
             return chat_gemini(prompt)
         else:
