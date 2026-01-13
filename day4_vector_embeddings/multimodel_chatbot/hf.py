@@ -4,10 +4,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_URL = {"huggingface": "https://router.huggingface.co/v1", "groq": "https://api.groq.com/openai/v1"}
-MODEL = {"huggingface": "meta-llama/Llama-3.3-70B-Instruct", "groq": "openai/gpt-oss-20b"}
+BASE_URL = {"huggingface": os.environ["HUGGINGFACE_URL"], "groq": os.environ["GROQ_URL"]}
+MODEL = {"huggingface": os.environ["HUGGINGFACE_MODEL"], "groq": os.environ["GROQ_MODEL"]}
 HF_API = os.environ["HF_TOKEN"]
-GROQ_API = os.environ.get("GROQ_API_KEY")
+GROQ_API = os.environ["GROQ_API_KEY"]
 API_KEY = {"huggingface": HF_API, "groq": GROQ_API}
 
 def chat_open_source(prompt: str, provider: str):

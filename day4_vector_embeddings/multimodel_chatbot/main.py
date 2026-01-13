@@ -1,15 +1,17 @@
 from typing import Tuple
 from gem import chat_gemini
-from groq import chat_groq
 from hf import chat_open_source
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 def chat(
     prompt: str,
     provider: str
 ) -> Tuple[str | None, str | None]:
     try:
-        if provider == "groq":
-            return chat_open_source(prompt, provider)
-        elif provider == "huggingface":
+        if provider == "huggingface" or provider == "groq":
             return chat_open_source(prompt, provider)
         elif provider == "gemini":
             return chat_gemini(prompt)
@@ -20,7 +22,7 @@ def chat(
 
 prompt = input("Enter prompt:")
 
-provider = input("Enter provider: (groq/gemini/huggingface)").lower()
+provider = os.environ["MODEL_USE"]
 
 response, error = chat(prompt, provider)
 

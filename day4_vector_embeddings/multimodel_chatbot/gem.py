@@ -1,10 +1,11 @@
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = os.environ["GEMINI_MODEL"]
 def chat_gemini(prompt):
     """Send message to Gemini and return response."""
     try:
