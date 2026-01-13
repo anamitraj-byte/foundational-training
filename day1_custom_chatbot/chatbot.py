@@ -50,7 +50,7 @@ Bake salmon at 400°F for 12-15 minutes, sauté asparagus with garlic butter. Th
 IMPORTANT: These examples are for guidance only. Do NOT refer to them as previous conversations. If asked about chat history, only reference the actual user conversations that follow these examples.
 """
 
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = os.environ["GEMINI_MODEL"]
 MAX_HISTORY_PAIRS = 10
 
 # ----------------------------------

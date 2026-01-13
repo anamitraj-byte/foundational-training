@@ -15,13 +15,13 @@ server = Server("huggingface-mcp")
 
 # Initialize Hugging Face client
 hf_client = OpenAI(
-    base_url="https://router.huggingface.co/v1",
+    base_url=os.environ["HUGGINGFACE_BASEURL"],
     api_key=os.environ.get("HF_TOKEN"),
 )
 
 # Serper API configuration
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
-SERPER_URL = "https://google.serper.dev/search"
+SERPER_URL = os.environ["SERPER_URL"]
 
 # List of available models
 AVAILABLE_MODELS = [
