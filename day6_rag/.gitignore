@@ -1,0 +1,4 @@
+.env
+/documents
+/chromadb_data
+__pycache__
