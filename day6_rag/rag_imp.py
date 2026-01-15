@@ -2,7 +2,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 import os
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import Dict
 import requests 
 from dotenv import load_dotenv
 import chromadb_sqlite as cdb
@@ -142,11 +142,18 @@ def rag_query(collection, query: str, llm_api_key: str = None,
     }
 
 
+def get_indexed_files(collection) -> set:
+    """Get set of filenames that are already in the collection."""
+    try:
+        all_metadatas = collection.get()['metadatas']
+        return set(meta['filename'] for meta in all_metadatas)
+    except:
+        return set()
+
 # --- Main execution ---
 if __name__ == "__main__":
     os.environ["ALLOW_RESET"] = "TRUE"
     client = chromadb.PersistentClient(path=cdb.CHROMA_DATA_PATH)
-    
     
     embedding_func = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name=cdb.EMBED_MODEL
@@ -158,23 +165,34 @@ if __name__ == "__main__":
         metadata={"hnsw:space": "cosine"}
     )
     
-    # Load and process documents if collection is empty
-    if collection.count() == 0:
-        print(f"Loading documents from {cdb.DOCUMENTS_PATH}...")
-        documents_data = cdb.load_documents_from_folder(cdb.DOCUMENTS_PATH)
+    # Always check for documents (not just when collection is empty)
+    print(f"Loading documents from {cdb.DOCUMENTS_PATH}...")
+    documents_data = cdb.load_documents_from_folder(cdb.DOCUMENTS_PATH)
+    
+    if not documents_data:
+        print("No documents found. Add .txt or .pdf files to documents/ folder")
+        exit()
+    
+    # Check which files are already indexed
+    indexed_files = get_indexed_files(collection)
+    new_documents = [doc for doc in documents_data if doc['filename'] not in indexed_files]
+    
+    if new_documents:
+        print(f"\nFound {len(new_documents)} new document(s) to index:")
+        for doc in new_documents:
+            print(f"  - {doc['filename']}")
         
-        if documents_data:
-            chunks, metadatas, ids = cdb.process_documents_with_chunking(
-                documents_data, 
-                chunking_strategy='recursive'
-            )
-            collection.add(documents=chunks, ids=ids, metadatas=metadatas)
-            print(f"Added {len(chunks)} chunks to ChromaDB")
-        else:
-            print("No documents found. Add .txt files to documents/ folder")
-            exit()
+        chunks, metadatas, ids = cdb.process_documents_with_chunking(
+            new_documents, 
+            chunking_strategy='recursive'
+        )
+        collection.add(documents=chunks, ids=ids, metadatas=metadatas)
+        print(f"✓ Added {len(chunks)} chunks from {len(new_documents)} new document(s)")
     else:
-        print(f"Using existing collection with {collection.count()} chunks")
+        print(f"✓ All {len(documents_data)} document(s) already indexed")
+    
+    print(f"\nTotal chunks in collection: {collection.count()}")
+    print(f"Indexed files: {', '.join(sorted(get_indexed_files(collection)))}")
     
     # --- Interactive RAG Query Loop ---
     print("\n" + "="*60)
@@ -196,10 +214,10 @@ if __name__ == "__main__":
         if not query:
             continue
         
-
         result = rag_query(collection, query, llm_api_key=API_KEY, llm_provider="openai")
         
         print(f"\n📚 Sources: {', '.join(set(result['sources']))}")
-        print(f"\n💬 Context preview:")
-        print(result['context'][:300] + "...\n")
+        print(f"\n📄 Context used ({len(result['context'])} chars):")
+        print(result['context'][:300] + "..." if len(result['context']) > 300 else result['context'])
+        print(f"\n💬 Answer:")
         print(result['answer'])

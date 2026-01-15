@@ -1,10 +1,7 @@
-import chromadb
-from chromadb.utils import embedding_functions
-import os
 from pathlib import Path
 from typing import List, Dict, Tuple
-import requests 
 from dotenv import load_dotenv
+import PyPDF2
 
 load_dotenv()
 
@@ -104,22 +101,25 @@ def chunk_recursive(text: str, max_chunk_size: int = CHUNK_SIZE) -> List[str]:
 
 
 def load_documents_from_folder(folder_path: str) -> List[Dict]:
-    """Load all .txt files from a folder."""
+    """Load all .txt and .pdf files from a folder."""
     documents_data = []
     folder = Path(folder_path)
     
     if not folder.exists():
         print(f"Creating folder: {folder_path}")
         folder.mkdir(parents=True, exist_ok=True)
-        print("Please add .txt files to this folder and run again.")
+        print("Please add .txt or .pdf files to this folder and run again.")
         return documents_data
     
+    # Get both txt and pdf files
     txt_files = list(folder.glob("*.txt"))
+    pdf_files = list(folder.glob("*.pdf"))
     
-    if not txt_files:
-        print(f"No .txt files found in {folder_path}")
+    if not txt_files and not pdf_files:
+        print(f"No .txt or .pdf files found in {folder_path}")
         return documents_data
     
+    # Process .txt files
     for txt_file in txt_files:
         try:
             with open(txt_file, 'r', encoding='utf-8') as f:
@@ -127,10 +127,29 @@ def load_documents_from_folder(folder_path: str) -> List[Dict]:
                 documents_data.append({
                     'filename': txt_file.name,
                     'content': content,
-                    'path': str(txt_file)
+                    'path': str(txt_file),
+                    'file_type': 'txt'
                 })
+                print(f"Loaded: {txt_file.name}")
         except Exception as e:
             print(f"Error reading {txt_file}: {e}")
+    
+    # Process .pdf files
+    for pdf_file in pdf_files:
+        try:
+            content = extract_text_from_pdf(pdf_file)
+            if content:
+                documents_data.append({
+                    'filename': pdf_file.name,
+                    'content': content,
+                    'path': str(pdf_file),
+                    'file_type': 'pdf'
+                })
+                print(f"Loaded: {pdf_file.name}")
+            else:
+                print(f"Warning: No text extracted from {pdf_file.name}")
+        except Exception as e:
+            print(f"Error reading {pdf_file}: {e}")
     
     return documents_data
 
@@ -201,3 +220,17 @@ def format_context_from_results(documents: List[str], metadatas: List[Dict],
     return "\n".join(context_parts)
 
 
+def extract_text_from_pdf(pdf_path: str) -> str:
+    """Extract text content from a PDF file."""
+    try:
+        text = ""
+        with open(pdf_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            for page in pdf_reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n\n"
+        return text.strip()
+    except Exception as e:
+        print(f"Error extracting text from PDF {pdf_path}: {e}")
+        return ""
