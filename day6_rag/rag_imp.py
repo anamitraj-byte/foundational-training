@@ -138,18 +138,15 @@ def rag_query(collection, query: str, llm_api_key: str = None,
         'answer': answer,
         'context': context,
         'sources': [meta['filename'] for meta in results['metadatas'][0]],
-        'prompt': prompt  # Useful for debugging
+        'prompt': prompt
     }
 
 
 # --- Main execution ---
 if __name__ == "__main__":
-    # Initialize ChromaDB
     os.environ["ALLOW_RESET"] = "TRUE"
     client = chromadb.PersistentClient(path=cdb.CHROMA_DATA_PATH)
     
-    # For fresh start (comment out if you want to keep existing data)
-    # client.reset()
     
     embedding_func = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name=cdb.EMBED_MODEL
@@ -183,22 +180,8 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("RAG System Ready!")
     print("="*60)
-    
-    # Option 1: Without API key (just shows the prompt)
-    print("\nExample without LLM API (shows prompt construction):")
-    query = "What is the main topic discussed?"
-    result = rag_query(collection, query)
-    print(f"\nQuery: {query}")
-    print(f"\nSources used: {', '.join(set(result['sources']))}")
-    print(f"\nPrompt that would be sent to LLM:")
-    print(result['prompt'][:500] + "..." if len(result['prompt']) > 500 else result['prompt'])
-    
-    # Option 2: With API key (uncomment and add your key)
 
     API_KEY = os.environ["GROQ_API_KEY"]
-    result = rag_query(collection, query, llm_api_key=API_KEY, llm_provider="openai")
-    print(f"\nAnswer: {result['answer']}")
-    print(f"Sources: {', '.join(set(result['sources']))}")
 
     # Interactive mode
     print("\n" + "="*60)
@@ -220,4 +203,3 @@ if __name__ == "__main__":
         print(f"\n💬 Context preview:")
         print(result['context'][:300] + "...\n")
         print(result['answer'])
-        # print("Add your LLM API key in the code to get actual answers!")
