@@ -3,3 +3,4 @@
 /day1_custom_chatbot/venv
 /day5_langchain/.env
 /s2t/.env
+/day9_agents_langchain/.env
