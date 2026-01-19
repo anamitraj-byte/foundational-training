@@ -1,6 +1,8 @@
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
 from langchain.tools import tool
+from langchain_tavily import TavilySearch
+
 
 from dotenv import load_dotenv
 
@@ -15,17 +17,19 @@ model = ChatGroq(
     max_retries=2,
 )
 
-@tool
-def search(query: str) -> str:
-    """Search for information."""
-    return f"Results for: {query}"
+tavily_search_tool = TavilySearch(
+    max_results=5,
+    topic="general",
+)
 
 @tool
 def get_weather(location: str) -> str:
     """Get weather information for a location."""
     return f"Weather in {location}: Sunny, 72°F"
 
-tools = [search, get_weather]
+
+
+tools = [tavily_search_tool, get_weather]
 
 agent = create_agent(
     model,
@@ -33,8 +37,11 @@ agent = create_agent(
     system_prompt="You are a helpful assistant. Be concise and accurate."
 )
 
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "what is the weather like in Shimla?"}]
-})
 
-print(result)
+user_input = "What is the weather in Shimla?"
+
+for step in agent.stream(
+    {"messages": user_input},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
