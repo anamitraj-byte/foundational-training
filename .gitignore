@@ -1,6 +1,9 @@
 /day1_custom_chatbot/.env
 /venv
 /day1_custom_chatbot/venv
-/day5_langchain/.env
-/s2t/.env
-/day9_agents_langchain/.env
+# /day5_langchain/.env
+# /s2t/.env
+# /day9_agents_langchain/.env
+# /day10_multimodal_RAG/.env
+.env
+/day10_multimodal_RAG/data
