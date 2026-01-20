@@ -51,14 +51,8 @@ tools = [add, multiply, divide]
 tools_by_name = {tool.name: tool for tool in tools}
 model_with_tools = model.bind_tools(tools)
 
+
 # Step 2: Define state
-
-from langchain.messages import AnyMessage
-from typing_extensions import TypedDict, Annotated
-import operator
-
-
-# Step 2: Define state (MODIFIED)
 from langchain.messages import AnyMessage
 from typing_extensions import TypedDict, Annotated
 import operator
@@ -69,7 +63,7 @@ class MessagesState(TypedDict):
     llm_calls: int
 
 
-# Step 3: Define model node (SAME)
+# Step 3: Define model node
 from langchain.messages import SystemMessage
 
 
@@ -91,7 +85,7 @@ def llm_call(state: dict):
     }
 
 
-# Step 4: Define tool node (SAME)
+# Step 4: Define tool node
 from langchain.messages import ToolMessage
 
 
@@ -106,11 +100,11 @@ def tool_node(state: dict):
     return {"messages": result}
 
 
-# Step 5: Define logic to determine whether to end (MODIFIED)
+# Step 5: Define logic to determine whether to end
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
 
-MAX_ITERATIONS = 5  # Set your limit here
+MAX_ITERATIONS = 5
 
 
 def should_continue(state: MessagesState) -> Literal["tool_node", END]:
