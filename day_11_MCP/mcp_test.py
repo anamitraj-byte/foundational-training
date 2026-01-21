@@ -28,8 +28,6 @@ AVAILABLE_MODELS = [
     "moonshotai/Kimi-K2-Instruct-0905",
     "meta-llama/Llama-3.3-70B-Instruct",
     "Qwen/Qwen2.5-72B-Instruct",
-    "mistralai/Mistral-7B-Instruct-v0.3",
-    "google/gemma-2-9b-it",
 ]
 
 
