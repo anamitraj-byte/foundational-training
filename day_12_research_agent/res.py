@@ -302,7 +302,7 @@ class RAGSystem:
     def setup_qa_chain(self, chain_type: str = "stuff", k: int = 4, 
                       model_name: str = "google/flan-t5-large",
                       response_style: str = "conversational",
-                      relevance_threshold: float = 0.7):
+                      relevance_threshold: float = 0.9):
         """
         Set up the question-answering chain with explicit LLM call.
         
@@ -424,6 +424,132 @@ class RAGSystem:
         print(f"✓ QA chain setup complete with '{response_style}' style")
         print(f"✓ Relevance threshold set to {relevance_threshold} (lower = more strict)")
     
+    def _execute_rag_pipeline(self, question: str, verbose: bool = False):
+        """
+        Core RAG pipeline execution - retrieves, filters, and generates answer.
+        Used by both query() and query_with_details().
+        
+        Args:
+            question: Question to ask
+            verbose: Whether to print detailed progress information
+            
+        Returns:
+            Dictionary with all RAG pipeline results including:
+            - filtered_docs: Documents that passed relevance threshold
+            - context: Extracted context text
+            - full_prompt: Complete prompt sent to LLM
+            - answer: Generated answer from LLM
+            - all_retrieved: All initially retrieved documents with scores
+        """
+        if self.qa_chain is None:
+            raise ValueError("QA chain not set up. Call setup_qa_chain() first.")
+        
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"❓ Question: {question}")
+            print(f"{'='*60}")
+            print("\n[Step 1] 🔍 Retrieving relevant documents...")
+        
+        # Step 1: Retrieve documents with similarity scores
+        retrieved_docs_with_scores = self.vectorstore.similarity_search_with_score(
+            question, 
+            k=self.retriever.search_kwargs.get("k", 4)
+        )
+        
+        if verbose:
+            print(f"✓ Retrieved {len(retrieved_docs_with_scores)} documents")
+        else:
+            print(f"\n🔍 Found {len(retrieved_docs_with_scores)} documents")
+        
+        # Step 2: Filter by relevance threshold
+        filtered_docs = []
+        for doc, distance in retrieved_docs_with_scores:
+            if distance <= self.relevance_threshold:
+                doc.metadata['distance'] = round(distance, 3)
+                doc.metadata['similarity'] = round(1 - min(distance, 1), 3)
+                filtered_docs.append(doc)
+                
+                if verbose:
+                    print(f"  ✓ Kept: {doc.metadata.get('source_file', 'Unknown')} (distance: {distance:.3f})")
+                else:
+                    print(f"  ✓ Doc: {doc.metadata.get('source_file', 'Unknown')} (distance: {distance:.3f}, similarity: {doc.metadata['similarity']:.3f})")
+            else:
+                if verbose:
+                    print(f"  ✗ Filtered: {doc.metadata.get('source_file', 'Unknown')} (distance: {distance:.3f})")
+                else:
+                    print(f"  ✗ Filtered out: {doc.metadata.get('source_file', 'Unknown')} (distance: {distance:.3f} > threshold {self.relevance_threshold})")
+        
+        print(f"\n📊 {len(filtered_docs)} documents pass relevance threshold ({self.relevance_threshold})")
+        
+        # Check if we have any relevant documents
+        if not filtered_docs:
+            print("⚠️  No documents meet the relevance threshold")
+            return {
+                "filtered_docs": [],
+                "context": "",
+                "full_prompt": "",
+                "answer": "I don't have enough relevant information in the documents to answer this question. The available documents don't seem to be related to your query.",
+                "all_retrieved": retrieved_docs_with_scores
+            }
+        
+        # Step 3: Extract relevant context
+        if verbose:
+            print("\n[Step 2] 📋 Extracting relevant context")
+        else:
+            print("📝 Generating LLM response...")
+        
+        context = self.context_extractor.extract_relevant_contexts_with_embeddings(
+            filtered_docs=filtered_docs,
+            question=question,
+            max_total_chars=1000
+        )
+        
+        # Limit total context length
+        if len(context) > 1000:
+            context = context[:1000] + "..."
+        
+        if verbose:
+            print(f"✓ Context prepared ({len(context)} characters)")
+            print(f"\n📄 Extracted context:\n{context[:300]}...\n")
+        else:
+            print(f"📏 Context size: {len(context)} characters")
+        
+        # Step 4: Generate prompt
+        if verbose:
+            print("\n[Step 3] 📝 Creating prompt...")
+        
+        full_prompt = self.prompt.format(context=context, question=question)
+        
+        if verbose:
+            print(f"✓ Prompt created ({len(full_prompt)} characters)")
+            print(f"\n📄 Full prompt:\n{full_prompt}\n")
+        
+        # Step 5: Call LLM
+        if verbose:
+            print("[Step 4] 🤖 Calling LLM to generate answer...")
+        
+        answer = self.llm.invoke(full_prompt)
+        
+        # Clean up answer if needed
+        if isinstance(answer, str):
+            answer = answer.strip()
+        
+        if verbose:
+            print("✓ LLM response received")
+            print(f"\n{'='*60}")
+            print(f"💡 Generated Answer:\n{answer}")
+            print(f"{'='*60}\n")
+        else:
+            print("✅ LLM response generated")
+        
+        return {
+            "filtered_docs": filtered_docs,
+            "context": context,
+            "full_prompt": full_prompt,
+            "answer": answer,
+            "all_retrieved": retrieved_docs_with_scores
+        }
+
     def query(self, question: str, return_sources: bool = True):
         """
         Query the RAG system with explicit LLM generation and relevance filtering.
@@ -435,71 +561,13 @@ class RAGSystem:
         Returns:
             Dictionary with LLM-generated answer and optionally source documents
         """
-        if self.qa_chain is None:
-            raise ValueError("QA chain not set up. Call setup_qa_chain() first.")
+        # Execute core RAG pipeline
+        rag_results = self._execute_rag_pipeline(question, verbose=False)
         
-        # Retrieve documents with similarity scores
-        retrieved_docs_with_scores = self.vectorstore.similarity_search_with_score(
-            question, 
-            k=self.retriever.search_kwargs.get("k", 4)
-        )
-        
-        print(f"\n🔍 Found {len(retrieved_docs_with_scores)} documents")
-        
-        # Filter by relevance threshold (lower distance = more similar)
-        filtered_docs = []
-        for doc, distance in retrieved_docs_with_scores:
-            # Convert distance to similarity (inverse relationship)
-            # Lower distance = higher similarity
-            if distance <= self.relevance_threshold:
-                doc.metadata['distance'] = round(distance, 3)
-                doc.metadata['similarity'] = round(1 - min(distance, 1), 3)
-                filtered_docs.append(doc)
-                print(f"  ✓ Doc: {doc.metadata.get('source_file', 'Unknown')} (distance: {distance:.3f}, similarity: {doc.metadata['similarity']:.3f})")
-            else:
-                print(f"  ✗ Filtered out: {doc.metadata.get('source_file', 'Unknown')} (distance: {distance:.3f} > threshold {self.relevance_threshold})")
-        
-        print(f"\n📊 {len(filtered_docs)} documents pass relevance threshold ({self.relevance_threshold})")
-        
-        # Check if we have any relevant documents
-        if not filtered_docs:
-            print("⚠️  No documents meet the relevance threshold")
-            return {
-                "answer": "I don't have enough relevant information in the documents to answer this question. The available documents don't seem to be related to your query.",
-                "raw_answer": "",
-                "sources": [],
-                "num_sources": 0
-            }
-        
-        print("📝 Generating LLM response...")
-
-        # Extract only the most relevant parts from each document
-        # Look for content related to the question
-        
-
-        context = self.context_extractor.extract_relevant_contexts_with_embeddings(
-                    filtered_docs=filtered_docs,
-                    question=question,
-                    max_total_chars=2000
-                )
-        # Limit total context length
-        if len(context) > 2000:
-            context = context[:2000] + "..."
-        
-        print(f"📏 Context size: {len(context)} characters")
-        
-        # Create prompt and generate answer
-        answer = self.qa_chain.invoke(question)
-        
-        # Clean up answer if needed
-        if isinstance(answer, str):
-            answer = answer.strip()
-        
-        print("✅ LLM response generated")
-        
+        # Build response
         response = {
-            "answer": answer,
-            "raw_answer": answer
+            "answer": rag_results["answer"],
+            "raw_answer": rag_results["answer"]
         }
         
         if return_sources:
@@ -508,12 +576,12 @@ class RAGSystem:
                     "content": doc.page_content,
                     "metadata": doc.metadata
                 }
-                for doc in filtered_docs
+                for doc in rag_results["filtered_docs"]
             ]
-            response["num_sources"] = len(filtered_docs)
+            response["num_sources"] = len(rag_results["filtered_docs"])
         
         return response
-    
+
     def query_with_details(self, question: str):
         """
         Query with detailed information about the RAG process.
@@ -524,96 +592,20 @@ class RAGSystem:
         if self.retriever is None:
             raise ValueError("Retriever not set up. Call setup_qa_chain() first.")
         
-        print(f"\n{'='*60}")
-        print(f"❓ Question: {question}")
-        print(f"{'='*60}")
-        
-        # Step 1: Retrieve documents with scores
-        print("\n[Step 1] 🔍 Retrieving relevant documents...")
-        retrieved_docs_with_scores = self.vectorstore.similarity_search_with_score(
-            question, 
-            k=self.retriever.search_kwargs.get("k", 4)
-        )
-        print(f"✓ Retrieved {len(retrieved_docs_with_scores)} documents")
-        
-        # Filter by relevance threshold
-        filtered_docs = []
-        for doc, distance in retrieved_docs_with_scores:
-            if distance <= self.relevance_threshold:
-                doc.metadata['distance'] = round(distance, 3)
-                doc.metadata['similarity'] = round(1 - min(distance, 1), 3)
-                filtered_docs.append(doc)
-                print(f"  ✓ Kept: {doc.metadata.get('source_file', 'Unknown')} (distance: {distance:.3f})")
-            else:
-                print(f"  ✗ Filtered: {doc.metadata.get('source_file', 'Unknown')} (distance: {distance:.3f})")
-        
-        print(f"📊 {len(filtered_docs)} documents after filtering")
-        
-        if not filtered_docs:
-            print("⚠️ No relevant documents found!")
-            return {
-                "question": question,
-                "answer": "No relevant information found",
-                "context": "",
-                "prompt": "",
-                "sources": []
-            }
-        
-        # Step 2: Extract keyword-relevant context (SAME AS query() method)
-        print("\n[Step 2] 📋 Extracting relevant context using keyword matching...")
-        question_keywords = set(question.lower().split())
-        
-        relevant_contexts = []
-        for doc in filtered_docs:
-            sentences = doc.page_content.split('.')
-            relevant_sentences = []
-            
-            for sentence in sentences[:10]:
-                sentence_lower = sentence.lower()
-                if any(keyword in sentence_lower for keyword in question_keywords):
-                    relevant_sentences.append(sentence.strip())
-            
-            if relevant_sentences:
-                context_chunk = '. '.join(relevant_sentences[:3]) + '.'
-                relevant_contexts.append(context_chunk)
-        
-        if not relevant_contexts:
-            relevant_contexts = [doc.page_content[:500] for doc in filtered_docs[:2]]
-        
-        context = "\n\n".join(relevant_contexts)
-        
-        if len(context) > 2000:
-            context = context[:2000] + "..."
-        
-        print(f"✓ Context prepared ({len(context)} characters)")
-        print(f"\n📄 Extracted context:\n{context[:300]}...\n")
-        
-        # Step 3: Generate prompt
-        print("\n[Step 3] 📝 Creating prompt...")
-        full_prompt = self.prompt.format(context=context, question=question)
-        print(f"✓ Prompt created ({len(full_prompt)} characters)")
-        print(f"\n📄 Full prompt:\n{full_prompt}\n")
-        
-        # Step 4: Call LLM
-        print("[Step 4] 🤖 Calling LLM to generate answer...")
-        answer = self.llm.invoke(full_prompt)
-        print("✓ LLM response received")
-        
-        print(f"\n{'='*60}")
-        print(f"💡 Generated Answer:\n{answer}")
-        print(f"{'='*60}\n")
+        # Execute core RAG pipeline with verbose output
+        rag_results = self._execute_rag_pipeline(question, verbose=True)
         
         return {
             "question": question,
-            "answer": answer,
-            "context": context,
-            "prompt": full_prompt,
+            "answer": rag_results["answer"],
+            "context": rag_results["context"],
+            "prompt": rag_results["full_prompt"],
             "sources": [
                 {
                     "content": doc.page_content,
                     "metadata": doc.metadata
                 }
-                for doc in filtered_docs
+                for doc in rag_results["filtered_docs"]
             ]
         }
     

@@ -137,7 +137,7 @@ with st.sidebar:
     
     response_style = st.selectbox(
         "Response Style",
-        ["conversational", "professional", "concise", "detailed"],
+        ["conversational", "professional", "concise", "detailed", "generic"],
         index=0,
         help="Choose how the AI should respond"
     )
@@ -471,7 +471,7 @@ with tab3:
     - Use **flan-t5-large** or larger for better quality answers
     - Set **relevance threshold** to 0.5-0.7 for focused queries
     - Ask **specific questions** rather than broad ones
-    - Use **conversational style** for natural responses
+    - Use **generic style** for natural responses
     
     #### 🚀 Quick Start Guide:
     
