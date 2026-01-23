@@ -63,7 +63,7 @@ if 'auto_indexed' not in st.session_state:
 
 # Helper function to initialize and index
 def initialize_system(documents_path, model_name, response_style, k_docs, 
-                      relevance_threshold, chunk_size, chunk_overlap, force_reload=False):
+                      similarity_threshold, chunk_size, chunk_overlap, force_reload=False):
     """Initialize RAG system and index documents"""
     try:
         # Create documents directory if it doesn't exist
@@ -106,7 +106,7 @@ def initialize_system(documents_path, model_name, response_style, k_docs,
                 k=k_docs,
                 model_name=model_name,
                 response_style=response_style,
-                relevance_threshold=relevance_threshold
+                similarity_threshold=similarity_threshold
             )
         
         st.session_state.indexed = True
@@ -152,13 +152,13 @@ with st.sidebar:
         help="More documents = more context but slower"
     )
     
-    relevance_threshold = st.slider(
-        "Relevance Threshold",
-        min_value=0.1,
-        max_value=2.0,
-        value=0.9,
+    similarity_threshold = st.slider(
+        "Similarity Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.1,
         step=0.1,
-        help="Lower = stricter filtering (0.3-0.5: strict, 0.6-0.9: balanced, 1.0+: lenient)"
+        help="Lower = stricter filtering"
     )
     
     # Document settings
@@ -202,7 +202,7 @@ with st.sidebar:
                 model_name,
                 response_style,
                 k_docs,
-                relevance_threshold,
+                similarity_threshold,
                 chunk_size,
                 chunk_overlap,
                 force_reload=True
@@ -235,7 +235,7 @@ with tab1:
                     model_name,
                     response_style,
                     k_docs,
-                    relevance_threshold,
+                    similarity_threshold,
                     chunk_size,
                     chunk_overlap
                 )
@@ -360,7 +360,7 @@ with tab2:
                     model_name,
                     response_style,
                     k_docs,
-                    relevance_threshold,
+                    similarity_threshold,
                     chunk_size,
                     chunk_overlap,
                     force_reload=False
@@ -423,7 +423,7 @@ with tab2:
                             model_name,
                             response_style,
                             k_docs,
-                            relevance_threshold,
+                            similarity_threshold,
                             chunk_size,
                             chunk_overlap
                         )
@@ -499,7 +499,7 @@ with tab3:
             "Model": model_name,
             "Response Style": response_style,
             "Documents to Retrieve": k_docs,
-            "Relevance Threshold": relevance_threshold,
+            "Relevance Threshold": similarity_threshold,
             "Chunk Size": chunk_size,
             "Chunk Overlap": chunk_overlap,
             "Documents Path": documents_path,
