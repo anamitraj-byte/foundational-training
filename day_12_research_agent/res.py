@@ -17,6 +17,14 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM, pipeline
 
+# Agent imports
+from langchain.tools import tool
+from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import HumanMessage
+from langchain import hub
+from langchain_community.tools import DuckDuckGoSearchRun
+from langchain_groq import ChatGroq
+
 # Load environment variables
 load_dotenv()
 
@@ -24,12 +32,7 @@ load_dotenv()
 class RAGSystem:
     """
     RAG system with unified cosine similarity metric throughout.
-    
-    Key improvements:
-    1. Uses cosine similarity for both chunk and sentence filtering
-    2. Consistent threshold interpretation (higher = more similar)
-    3. Better performance tracking and debugging
-    4. Optimized batch embedding for performance
+    Now includes agent support for combining RAG with web search.
     """
     
     def __init__(self, persist_directory: str = "./chroma_db", 
@@ -54,7 +57,11 @@ class RAGSystem:
         self.qa_chain = None
         self.retriever = None
         self.indexed_files = self._load_indexed_files()
-        self._sentence_cache = {}  # Cache for sentence embeddings
+        self._sentence_cache = {}
+        
+        # Agent-related attributes
+        self.agent_executor = None
+        self.tools = []
         
     def _load_indexed_files(self) -> dict:
         """Load the record of previously indexed files."""
@@ -77,12 +84,7 @@ class RAGSystem:
         return hash_md5.hexdigest()
     
     def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
-        """
-        Calculate cosine similarity between two vectors.
-        
-        Returns:
-            Similarity score between -1 and 1 (higher = more similar)
-        """
+        """Calculate cosine similarity between two vectors."""
         return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
     
     def _smart_sentence_split(self, text: str) -> List[str]:
@@ -92,12 +94,7 @@ class RAGSystem:
         return [s.strip() for s in sentences if s.strip()]
     
     def _get_all_files(self, source_path: str) -> List[tuple]:
-        """
-        Get all PDF and TXT files from the source path.
-        
-        Returns:
-            List of tuples (filepath, file_type)
-        """
+        """Get all PDF and TXT files from the source path."""
         files = []
         
         if os.path.isdir(source_path):
@@ -108,7 +105,6 @@ class RAGSystem:
                 elif filename.endswith('.txt'):
                     files.append((filepath, 'txt'))
         else:
-            # Single file
             if source_path.endswith('.pdf'):
                 files.append((source_path, 'pdf'))
             elif source_path.endswith('.txt'):
@@ -117,19 +113,13 @@ class RAGSystem:
         return files
     
     def _get_new_or_modified_files(self, source_path: str) -> List[tuple]:
-        """
-        Identify new or modified files that need to be indexed.
-        
-        Returns:
-            List of tuples (filepath, file_type) for files that need indexing
-        """
+        """Identify new or modified files that need to be indexed."""
         all_files = self._get_all_files(source_path)
         files_to_index = []
         
         for filepath, file_type in all_files:
             file_hash = self._get_file_hash(filepath)
             
-            # Check if file is new or modified
             if filepath not in self.indexed_files or self.indexed_files[filepath] != file_hash:
                 files_to_index.append((filepath, file_type))
                 print(f"📄 New/Modified: {os.path.basename(filepath)}")
@@ -137,19 +127,9 @@ class RAGSystem:
         return files_to_index
     
     def load_documents(self, source_path: str, force_reload: bool = False) -> List:
-        """
-        Load documents from files (PDF and TXT).
-        
-        Args:
-            source_path: Path to file or directory
-            force_reload: If True, reload all files regardless of changes
-            
-        Returns:
-            List of loaded documents
-        """
+        """Load documents from files (PDF and TXT)."""
         documents = []
         
-        # Get files to index
         if force_reload:
             files_to_load = self._get_all_files(source_path)
             print("Force reload: loading all files")
@@ -159,7 +139,6 @@ class RAGSystem:
                 print("✓ All files are up to date. No new documents to load.")
                 return []
         
-        # Load each file
         for filepath, file_type in files_to_load:
             try:
                 if file_type == "pdf":
@@ -169,14 +148,11 @@ class RAGSystem:
                 
                 docs = loader.load()
                 
-                # Add file information to metadata
                 for doc in docs:
                     doc.metadata['source_file'] = os.path.basename(filepath)
                     doc.metadata['file_type'] = file_type
                 
                 documents.extend(docs)
-                
-                # Update indexed files record
                 self.indexed_files[filepath] = self._get_file_hash(filepath)
                 
                 print(f"✓ Loaded {os.path.basename(filepath)}: {len(docs)} pages/sections")
@@ -184,7 +160,6 @@ class RAGSystem:
             except Exception as e:
                 print(f"✗ Error loading {os.path.basename(filepath)}: {e}")
         
-        # Save updated index
         if documents:
             self._save_indexed_files()
             print(f"\n📚 Total new/modified documents loaded: {len(documents)}")
@@ -195,17 +170,7 @@ class RAGSystem:
     
     def split_documents(self, documents: List, chunk_size: int = 1000, 
                        chunk_overlap: int = 200) -> List:
-        """
-        Split documents into smaller chunks.
-        
-        Args:
-            documents: List of documents to split
-            chunk_size: Size of each chunk
-            chunk_overlap: Overlap between chunks
-            
-        Returns:
-            List of document chunks
-        """
+        """Split documents into smaller chunks."""
         if not documents:
             print("No documents to split")
             return []
@@ -218,37 +183,29 @@ class RAGSystem:
         )
         
         chunks = text_splitter.split_documents(documents)
-        print(f"\n✂️ Split into {len(chunks)} chunks")
-        print(f"📏 Chunk size: {chunk_size} chars, overlap: {chunk_overlap} chars")
+        print(f"\nSplit into {len(chunks)} chunks")
+        print(f"Chunk size: {chunk_size} chars, overlap: {chunk_overlap} chars")
         if chunks:
-            print(f"📝 Sample chunk (first 150 chars):")
+            print(f"Sample chunk (first 150 chars):")
             print(f"   {chunks[0].page_content[:150]}...")
         return chunks
     
     def create_vectorstore(self, chunks: List):
-        """
-        Create vector store with explicit cosine similarity configuration.
-        """
+        """Create vector store with explicit cosine similarity configuration."""
         if not chunks:
             print("No chunks to create vectorstore from")
             return
         
-        # IMPORTANT: Configure Chroma to use cosine similarity
         self.vectorstore = Chroma.from_documents(
             documents=chunks,
             embedding=self.embeddings,
             persist_directory=self.persist_directory,
-            collection_metadata={"hnsw:space": "cosine"}  # ← KEY: Use cosine distance
+            collection_metadata={"hnsw:space": "cosine"}
         )
         print("✓ Vector store created with COSINE similarity metric")
     
     def update_vectorstore(self, chunks: List):
-        """
-        Add new chunks to an existing vector store.
-        
-        Args:
-            chunks: List of new document chunks to add
-        """
+        """Add new chunks to an existing vector store."""
         if not chunks:
             print("No new chunks to add")
             return
@@ -257,7 +214,6 @@ class RAGSystem:
             print("No existing vectorstore found. Creating new one...")
             self.create_vectorstore(chunks)
         else:
-            # Add documents to existing vectorstore
             self.vectorstore.add_documents(chunks)
             print(f"✓ Added {len(chunks)} new chunks to vector store")
     
@@ -274,33 +230,22 @@ class RAGSystem:
     
     def index_documents(self, source_path: str, force_reload: bool = False,
                        chunk_size: int = 1000, chunk_overlap: int = 200):
-        """
-        Complete indexing pipeline: load, split, and index documents.
-        
-        Args:
-            source_path: Path to documents directory or file
-            force_reload: If True, reindex all files
-            chunk_size: Size of text chunks
-            chunk_overlap: Overlap between chunks
-        """
+        """Complete indexing pipeline: load, split, and index documents."""
         print("=" * 60)
         print("📚 Starting document indexing...")
         print("=" * 60)
         
-        # Load documents
         documents = self.load_documents(source_path, force_reload)
         
         if not documents:
             print("\n✓ Index is up to date")
             return
         
-        # Split into chunks
         chunks = self.split_documents(documents, chunk_size, chunk_overlap)
         
         if not chunks:
             return
         
-        # Create or update vectorstore
         if self.vectorstore is None:
             self.load_vectorstore()
         
@@ -317,35 +262,19 @@ class RAGSystem:
                       model_name: str = "google/flan-t5-large",
                       response_style: str = "conversational",
                       similarity_threshold: float = 0.3):
-        """
-        Set up QA chain with UNIFIED cosine similarity threshold.
-        
-        Args:
-            k: Number of chunks to retrieve
-            model_name: HuggingFace model for local inference
-            response_style: Style of response
-            similarity_threshold: Minimum cosine similarity (0-1, higher = stricter)
-                                 0.0 = orthogonal (unrelated)
-                                 0.3 = somewhat similar (default)
-                                 0.5 = moderately similar
-                                 0.7 = very similar
-                                 1.0 = identical
-        """
+        """Set up QA chain with UNIFIED cosine similarity threshold."""
         if self.vectorstore is None:
             self.load_vectorstore()
             if self.vectorstore is None:
                 raise ValueError("Vector store not initialized. Index documents first.")
         
-        # Store threshold (now in cosine similarity scale)
         self.similarity_threshold = similarity_threshold
         
-        # Setup retriever
         self.retriever = self.vectorstore.as_retriever(
-            search_type="similarity",  # Use similarity search
+            search_type="similarity",
             search_kwargs={"k": k}
         )
         
-        # Initialize LLM if needed
         if self.use_local_models and self.llm is None:
             print(f"🤖 Loading model: {model_name}...")
             
@@ -433,19 +362,7 @@ FINAL ANSWER:"""
               sentence_level_reranking: bool = True,
               verbose: bool = True,
               return_detailed_info: bool = False) -> Dict:
-        """
-        Query with unified cosine similarity filtering.
-        
-        Args:
-            question: Question to ask
-            return_sources: Whether to return source documents
-            sentence_level_reranking: Whether to do sentence-level similarity filtering
-            verbose: Whether to print detailed progress
-            return_detailed_info: Whether to include context, prompt, and full pipeline details
-            
-        Returns:
-            Dictionary with answer and metadata
-        """
+        """Query with unified cosine similarity filtering."""
         if self.qa_chain is None:
             raise ValueError("QA chain not set up. Call setup_qa_chain() first.")
         
@@ -454,10 +371,8 @@ FINAL ANSWER:"""
             print(f"🔍 STAGE 1: Chunk-Level Retrieval (Cosine Similarity)")
             print(f"{'='*60}")
         
-        # Get question embedding
         question_embedding = np.array(self.embeddings.embed_query(question))
         
-        # Retrieve chunks with scores
         retrieved_docs_with_scores = self.vectorstore.similarity_search_with_score(
             question, 
             k=self.retriever.search_kwargs.get("k", 4)
@@ -466,10 +381,8 @@ FINAL ANSWER:"""
         if verbose:
             print(f"Retrieved {len(retrieved_docs_with_scores)} chunks")
         
-        # UNIFIED FILTERING: Convert distances to cosine similarity
         filtered_chunks = []
         for doc, distance in retrieved_docs_with_scores:
-            # Chroma's cosine distance: distance = 1 - cosine_similarity
             similarity = 1 - distance
             
             doc.metadata['chunk_similarity'] = round(similarity, 3)
@@ -500,7 +413,6 @@ FINAL ANSWER:"""
                 "prompt": ""
             }
         
-        # STAGE 2: Sentence-level reranking (optional)
         if sentence_level_reranking:
             if verbose:
                 print(f"\n{'='*60}")
@@ -513,14 +425,11 @@ FINAL ANSWER:"""
                 max_chars=2000
             )
         else:
-            # Use full chunks
             context = "\n\n".join([doc.page_content for doc in filtered_chunks])[:2000]
             sentence_similarities = []
         
-        # Generate prompt (for detailed info)
         full_prompt = self.prompt.format(context=context, question=question) if return_detailed_info else ""
         
-        # Generate answer
         if verbose:
             print(f"\n{'='*60}")
             print(f"🤖 Generating Answer")
@@ -534,10 +443,9 @@ FINAL ANSWER:"""
             "answer": answer.strip() if isinstance(answer, str) else answer,
             "num_sources": len(filtered_chunks),
             "chunk_similarities": [doc.metadata['chunk_similarity'] for doc in filtered_chunks],
-            "sentence_similarities": sentence_similarities[:10]  # Top 10
+            "sentence_similarities": sentence_similarities[:10]
         }
         
-        # Add detailed info if requested
         if return_detailed_info:
             response["context"] = context
             response["prompt"] = full_prompt
@@ -557,15 +465,9 @@ FINAL ANSWER:"""
                                     question_embedding: np.ndarray,
                                     max_chars: int = 2000,
                                     top_k: int = 15) -> Tuple[str, List[float]]:
-        """
-        Extract most relevant sentences using COSINE SIMILARITY with batch embeddings.
-        
-        Returns:
-            Tuple of (context_string, list_of_similarities)
-        """
+        """Extract most relevant sentences using COSINE SIMILARITY with batch embeddings."""
         all_sentences = []
         
-        # Collect sentences from all chunks
         for chunk in chunks:
             sentences = self._smart_sentence_split(chunk.page_content)
             for sent in sentences:
@@ -580,26 +482,20 @@ FINAL ANSWER:"""
         
         print(f"Found {len(all_sentences)} sentences to analyze")
         
-        # OPTIMIZED: Batch embed all sentences at once
         sentence_texts = [s['text'] for s in all_sentences]
         sentence_embeddings = self.embeddings.embed_documents(sentence_texts)
         
-        # OPTIMIZED: Vectorized similarity calculation
         embeddings_matrix = np.array(sentence_embeddings)
         norms = np.linalg.norm(embeddings_matrix, axis=1)
         question_norm = np.linalg.norm(question_embedding)
         
-        # Calculate all similarities at once
         similarities = np.dot(embeddings_matrix, question_embedding) / (norms * question_norm)
         
-        # Add similarities to sentence data
         for i, sim in enumerate(similarities):
             all_sentences[i]['similarity'] = float(sim)
         
-        # Sort by similarity (highest first)
         all_sentences.sort(key=lambda x: x['similarity'], reverse=True)
         
-        # Build context
         selected = []
         total_chars = 0
         selected_similarities = []
@@ -627,18 +523,137 @@ FINAL ANSWER:"""
         
         return "\n\n".join(selected), selected_similarities
     
-    def query_with_details(self, question: str):
+    def setup_agent(self, enable_web_search: bool = True):
         """
-        Query with detailed information about the RAG process.
-        This is now just a convenience wrapper that calls query() with verbose options.
+        Setup an agent that combines RAG with web search capabilities.
         
-        Returns detailed information about retrieval and generation WITHOUT making duplicate LLM calls.
+        Args:
+            enable_web_search: Whether to enable DuckDuckGo web search tool
         """
+        if self.llm is None:
+            raise ValueError("LLM not initialized. Call setup_qa_chain() first.")
+        
+        print("\n" + "="*60)
+        print("🤖 Setting up Agent with Tools...")
+        print("="*60)
+
+        model = ChatGroq(
+            model="qwen/qwen3-32b",
+            temperature=0,
+            max_tokens=None,
+            reasoning_format="parsed",
+            timeout=None,
+            max_retries=2,
+        )
+        
+        # Define RAG tool
+        @tool
+        def rag_search(query: str) -> str:
+            """Useful for answering questions about internal documents, company policies, 
+                technical documentation, or any information from indexed PDF and text files.
+                Input should be a clear question about the internal knowledge base."""
+            try:
+                response = self.query(
+                    query, 
+                    return_sources=False,
+                    sentence_level_reranking=True,
+                    verbose=False
+                )
+                return response["answer"]
+            except Exception as e:
+                return f"Error searching internal documents: {str(e)}"
+
+        self.tools = [rag_search]
+        
+        # Add web search tool if enabled
+        if enable_web_search:
+            try:
+                web_search = DuckDuckGoSearchRun()
+                @tool
+                def web_search_wrapper(query: str) -> str:
+                    """Useful for finding current information, recent news, or facts not in
+                        the internal documents. Use this for questions about current events,
+                        latest developments, or general knowledge. Input should be a search query."""
+                    try:
+                        result = web_search.run(query)
+                        # Limit result length
+                        max_length = 1000
+                        if len(result) > max_length:
+                            result = result[:max_length] + "..."
+                        return result
+                    except Exception as e:
+                        return f"Web search error: {str(e)}"
+
+                self.tools.append(web_search_wrapper)
+                print("✓ Web search tool enabled (DuckDuckGo)")
+                
+            except Exception as e:
+                print(f"⚠️  Warning: Could not enable web search: {e}")
+                print("   Continuing with RAG-only mode")
+        
+        # Create agent using ReAct pattern
+        try:
+            # Pull the ReAct prompt from hub
+            prompt = hub.pull("hwchase17/react")
+            
+            # Create agent
+            self.agent = create_agent(
+                llm=self.llm,
+                tools=self.tools,
+                prompt=prompt
+            )
+
+            
+            print(f"✓ Agent created with {len(self.tools)} tool(s)")
+            for tool in self.tools:
+                print(f"  - {tool.name}")
+            print("="*60 + "\n")
+            
+        except Exception as e:
+            print(f"❌ Error creating agent: {e}")
+            print("   Falling back to direct RAG queries")
+            self.agent_executor = None
+    
+    def ask_agent(self, question: str) -> str:
+        """
+        Ask a question to the agent, which will decide whether to use RAG, 
+        web search, or both.
+        
+        Args:
+            question: The question to ask
+            
+        Returns:
+            The agent's answer
+        """
+        if self.agent_executor is None:
+            print("⚠️  Agent not initialized. Using direct RAG query instead.")
+            response = self.query(question, verbose=False)
+            return response["answer"]
+        
+        try:
+            print(f"\n{'='*60}")
+            print(f"🤔 Agent thinking about: {question}")
+            print(f"{'='*60}\n")
+            
+            for step in self.agent.stream(
+                {"messages": question},
+                stream_mode="values",
+            ):
+                step["messages"][-1].pretty_print()
+            return result["output"]
+            
+        except Exception as e:
+            print(f"❌ Agent error: {e}")
+            print("   Falling back to direct RAG query")
+            response = self.query(question, verbose=False)
+            return response["answer"]
+    
+    def query_with_details(self, question: str):
+        """Query with detailed information about the RAG process."""
         print(f"\n{'='*60}")
         print(f"❓ Question: {question}")
         print(f"{'='*60}")
         
-        # Call query() once with detailed info enabled
         response = self.query(
             question=question,
             return_sources=True,
@@ -647,7 +662,6 @@ FINAL ANSWER:"""
             return_detailed_info=True
         )
         
-        # Pretty print the detailed breakdown
         print(f"\n{'='*60}")
         print(f"📋 DETAILED BREAKDOWN")
         print(f"{'='*60}")
@@ -673,14 +687,10 @@ FINAL ANSWER:"""
         return response
     
     def get_similarity_stats(self, question: str, k: int = 10):
-        """
-        Get detailed similarity statistics for debugging.
-        Shows unified cosine similarity metrics.
-        """
+        """Get detailed similarity statistics for debugging."""
         if self.vectorstore is None:
             raise ValueError("Vector store not initialized")
         
-        # DIAGNOSTIC: Check what distance metric Chroma is actually using
         try:
             collection = self.vectorstore._collection
             metadata = collection.metadata
@@ -691,7 +701,6 @@ FINAL ANSWER:"""
         except Exception as e:
             print(f"⚠️  Could not check distance metric: {e}")
         
-        # Get top k chunks
         results = self.vectorstore.similarity_search_with_score(question, k=k)
         
         print(f"\n{'='*80}")
@@ -702,7 +711,7 @@ FINAL ANSWER:"""
         
         stats = []
         for i, (doc, distance) in enumerate(results, 1):
-            similarity = 1 - distance  # Assumes cosine distance
+            similarity = 1 - distance
             
             print(f"[{i}] {doc.metadata.get('source_file', 'Unknown')}")
             print(f"    Raw Distance:      {distance:.4f}")
@@ -741,7 +750,7 @@ FINAL ANSWER:"""
 
 # Example usage
 if __name__ == "__main__":
-    print("🚀 Initializing Unified RAG System (Cosine Similarity Throughout)\n")
+    print("🚀 Initializing RAG System with Agent Support\n")
     
     # Initialize
     rag = RAGSystem(use_local_models=True)
@@ -750,70 +759,36 @@ if __name__ == "__main__":
         rag.load_vectorstore()
         rag.index_documents("documents")
     else:
-        print("No existing vectorstore found. Creating new one with cosine metric...")
-        # Force reload to create vectorstore from scratch
+        print("No existing vectorstore found. Creating new one...")
         rag.index_documents("documents", force_reload=True)
-    
     
     # Show indexed files
     rag.get_indexed_files_info()
     
-    # Setup QA chain with unified threshold (now vectorstore is guaranteed to exist)
+    # Setup QA chain
     rag.setup_qa_chain(
         k=4,
         model_name="google/flan-t5-large",
         response_style="conversational",
-        similarity_threshold=0.3  # 0.3 = moderately similar (recommended default)
+        similarity_threshold=0.3
     )
     
-    # Query the system
+    # Setup agent with both RAG and web search
+    rag.setup_agent(enable_web_search=True)
+    
+    # Interactive query loop
     print("\n" + "="*60)
     print("✅ Ready for queries!")
     print("="*60)
+    print("\nModes:")
+    print("  • agent     - Use agent (combines RAG + web search)")
+    print("  • rag       - Direct RAG query only")
+    print("  • detailed  - Detailed RAG analysis")
+    print("  • stats     - Similarity diagnostics")
+    print("  • quit      - Exit\n")
     
     while True:
-        q = input("\n💬 Enter your question (or 'quit' to exit, 'stats' for diagnostics, 'detailed' for verbose mode): ")
+        mode = input("💬 Select mode (agent/rag/detailed/stats/quit): ").strip().lower()
         
-        if q.lower() in ['q', 'quit', 'exit']:
+        if mode in ['q', 'quit', 'exit']:
             print("👋 Goodbye!")
-            break
-        
-        elif q.lower() == 'stats':
-            test_q = input("Enter a question to analyze: ")
-            if test_q.strip():
-                rag.get_similarity_stats(test_q, k=5)
-            continue
-        
-        elif q.lower() == 'detailed':
-            test_q = input("Enter a question for detailed analysis: ")
-            if test_q.strip():
-                # This now only makes ONE LLM call but shows all details
-                rag.query_with_details(test_q)
-            continue
-        
-        elif q.strip():
-            # Single query with all info included (ONE LLM call)
-            response = rag.query(
-                q, 
-                sentence_level_reranking=True, 
-                verbose=True,
-                return_detailed_info=True  # Get context/prompt without extra LLM call
-            )
-            
-            print(f"\n{'='*60}")
-            print(f"💡 Answer:")
-            print(f"{'='*60}")
-            print(f"{response['answer']}\n")
-            
-            print(f"📊 Metadata:")
-            print(f"  Sources used: {response['num_sources']}")
-            print(f"  Chunk similarities: {response['chunk_similarities']}")
-            print(f"  Top sentence similarities: {response['sentence_similarities'][:5]}")
-            
-            # Show context/prompt if user wants (no extra LLM call needed!)
-            show_details = input("\n🔍 Show context & prompt? (y/n): ")
-            if show_details.lower() == 'y':
-                print(f"\n📄 Context ({len(response['context'])} chars):")
-                print(f"{response['context'][:800]}...")
-                print(f"\n📝 Full Prompt:")
-                print(f"{response['prompt'][:800]}...")

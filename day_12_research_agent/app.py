@@ -156,7 +156,7 @@ with st.sidebar:
         "Similarity Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.1,
+        value=0.3,
         step=0.1,
         help="Lower = stricter filtering"
     )
@@ -291,8 +291,6 @@ with tab1:
                         with st.expander(f"📚 View {len(response['sources'])} Source(s)", expanded=False):
                             for idx, source in enumerate(response['sources'], 1):
                                 st.markdown(f"**Source {idx}:** {source['metadata'].get('source_file', 'Unknown')}")
-                                st.markdown(f"**Distance:** {source['metadata'].get('distance', 'N/A')}")
-                                st.markdown(f"**Similarity:** {source['metadata'].get('similarity', 'N/A')}")
                                 with st.container():
                                     st.text_area(
                                         f"Content {idx}",
