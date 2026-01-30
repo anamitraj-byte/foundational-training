@@ -19,54 +19,6 @@ class PHIMasker:
         self.use_consistent_hashing = use_consistent_hashing
         self.name_mapping = {}
         self.date_offset = None
-
-    # def _generate_replacement_pool(self) -> List[str]:
-    #     """Generate pool of realistic replacement names."""
-    #     first_names = [
-    #         'Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery',
-    #         'Quinn', 'Sage', 'Dakota', 'Rowan', 'Phoenix', 'River', 'Skylar'
-    #     ]
-    #     last_names = [
-    #         'Anderson', 'Thompson', 'Martinez', 'Wilson', 'Moore', 'Taylor',
-    #         'Jackson', 'White', 'Harris', 'Martin', 'Garcia', 'Davis'
-    #     ]
-        
-    #     # Generate full name combinations
-    #     pool = []
-    #     for first in first_names:
-    #         for last in last_names:
-    #             pool.append(f"{first} {last}")
-        
-    #     return pool
-    
-    # def mask_names(self, text: str) -> str:
-    #     """Mask names using NER."""
-    #     # Requires: pip install scispacy
-    #     #           python -m spacy download en_core_web_sm
-    #     nlp = spacy.load("en_core_sci_md")
-
-    #     doc = nlp(text)
-
-    #     print(f"Found entities: {[(ent.text, ent.label_) for ent in doc.ents]}")
-
-    #     replacements = []
-        
-    #     for ent in doc.ents:
-    #         if ent.label_ == "PERSON":
-    #             # Get consistent replacement
-    #             if ent.text not in self.name_mapping:
-    #                 hash_val = int(hashlib.md5(ent.text.encode()).hexdigest(), 16)
-    #                 self.name_mapping[ent.text] = self.replacement_names[
-    #                     hash_val % len(self.replacement_names)
-    #                 ]
-                
-    #             replacements.append((ent.start_char, ent.end_char, self.name_mapping[ent.text]))
-        
-    #     # Apply replacements in reverse order
-    #     for start, end, replacement in reversed(replacements):
-    #         text = text[:start] + replacement + text[end:]
-        
-    #     return text
         
     def _get_consistent_replacement(self, original, category, replacement_list):
         """Generate consistent replacement for the same original value."""
