@@ -10,8 +10,8 @@ __pycache__/
 data/
 transcript.pdf
 clinical_summary.json
-clinical_summary.txt
-masked_transcript.txt
-clinical_summary.docx
 clinical_summary.md
 .venv
+*.pdf
+*.docx
+*.txt
