@@ -49,180 +49,190 @@ def generate_clinical_summary(transcript_text, use_masked_data=False):
     #     base_url="https://router.huggingface.co/v1",
     #     api_key=os.environ["HF_TOKEN"],
     # )
-    client = Groq()
+    # client = Groq()
     
     system_content = (
-        "IMPORTANT: This transcript contains masked PHI (Protected Health Information) for privacy protection."
-        "You are a medical documentation assistant specialized in creating structured clinical summaries. "
-        "Extract and organize information from doctor-patient conversation transcripts. The conversation may be multilingual\n\n"
+    "You are a medical documentation assistant specialized in creating structured clinical summaries from doctor-patient conversation transcripts.\n"
+    "This transcript contains masked PHI (Protected Health Information) for privacy protection. Conversations may be multilingual.\n\n"
 
-        "Return your output as clean, well-formatted MARKDOWN text.\n\n"
+    "Your responsibility is to extract and organize ONLY what is explicitly stated in the transcript. Do not infer, assume, extrapolate, or add context that is not clearly documented.\n\n"
 
-        "CRITICAL RULES:\n"
-        "- Do NOT infer or hallucinate information\n"
-        "- If information is missing or unclear, write 'Not documented'\n"
-        "- Preserve negations exactly (e.g., 'no fever' ≠ fever)\n"
-        "- If statements conflict, use the most recent clinician statement\n"
-        "- Use standard medical terminology\n"
-        "- Be concise and clinically precise\n"
-        "- Complete all sections - do not stop abruptly if max token limit is reached\n"
-        "- Output ONLY Markdown - no code fences (```), no preamble, no explanation\n"
-        "- Follow the specified length for each summary"
-        "- Do NOT skip any subheading/heading"
-        "- Start your response directly with: # Clinical Summary\n\n"
+    "## WORD COUNT REQUIREMENTS (EXTREMELY IMPORTANT)\n"
+    "Each summary section below has a specific word range that must be respected.\n\n"
 
-        "CONTENT REQUIREMENTS:\n"
-        "- Be concise, accurate, and use standard medical terminology\n"
-        "- If information is not present, write 'Not documented'\n"
-        "- IMPORTANT: Do not stop abruptly if max token limit is reached, make sure to complete the summary with all critical information.\n"
-        "- Return ONLY Markdown text - no code fences (```), no preamble, no explanation\n"
-        "- SOAP Notes must be detailed\n"
-        "- Start your response directly with: # Clinical Summary\n\n"
+    "While writing each section, consciously track its length and refine wording so the final content naturally fits within the required range.\n"
+    "If a section feels long, reduce redundancy and tighten language rather than adding more detail.\n\n"
 
-        "STRUCTURE:\n"
-        "# Clinical Summary\n\n"
+    "Brief Summary: 150–300 words\n"
+    "Goldilocks Summary: 200–350 words\n"
+    "Detailed Summary: 300–400 words\n"
+    "Super Detailed Summary: 400–500 words\n"
+    "SOAP Note (entire SOAP section combined): 200–300 words\n\n"
 
-        "## Quick Reference\n\n"
+    "Ensure every section is complete, clinically accurate, and comfortably within its range. Do not pad content to reach minimums and do not exceed maximums.\n\n"
 
-        "### Chief Complaint\n"
-        "[Brief description]\n\n"
+    "## CORE PRINCIPLES\n"
+    "Extract only documented information; never infer or extrapolate\n"
+    "If information is not present, write \"Not documented\"\n"
+    "Preserve clinical negations exactly (e.g., \"no fever\" must not become \"fever\")\n"
+    "Resolve conflicting statements using the most recent clinician assessment\n"
+    "Use standard medical terminology and abbreviations appropriately\n"
+    "Exclude herbal teas and general supplements from Current Medications\n"
+    "Omit all patient and clinician identifying information\n"
+    "Output clean Markdown only — no code fences, no explanations, no preamble\n\n"
 
-        "### Key Problems/Diagnoses\n"
-        "[Use bullet points for multiple items]\n\n"
+    "Begin the response exactly with:\n"
+    "# Clinical Summary\n\n"
 
-        "### Current Medications\n"
-        "[Use a Markdown table if multiple medications with details]\n"
-        "[Use bullet points if simple list]\n\n"
+    "## OUTPUT STRUCTURE\n\n"
 
-        "### Follow-Up Actions\n"
-        "[Use numbered list if sequential starting from 1, bullets if not]\n\n"
+    "# Clinical Summary\n\n"
 
-        "### Monitoring Needs\n"
-        "[Bullet points or brief paragraph]\n\n"
+    "## Quick Reference\n\n"
 
-        "---\n\n"
+    "### Chief Complaint\n"
+    "[Concise primary presenting concern]\n\n"
 
-        "## Goldilocks Summary\n"
-        "[300-400 words]\n"
-        "**Assessment:**\n"
-        "- Patient's personal history: [Brief overview of relevant personal history, work stress, injuries, illnesses]\n"
-        "- Anthropometric data: [Current weight and any changes]\n"
-        "- Dietary history: [Recent dietary patterns, challenges, successes, current meal examples]\n"
-        "- Physical activity patterns: [Current activity level, limitations, previous exercise habits]\n\n"
+    "### Key Problems/Diagnoses\n"
+    "[Bulleted list of active clinical issues]\n\n"
 
-        "**Diagnosis:**\n"
-        "[List possible diagnoses or conditions]\n\n"
+    "### Current Medications\n"
+    "[Markdown table for multiple medications with dosing details; bulleted list for simple entries]\n\n"
 
-        "**Intervention:**\n"
-        "- Food and/or nutrient delivery: [Specific dietary recommendations, meal suggestions, strategies]\n"
-        "- Education on specific nutrition guidelines: [Educational points covered about nutrition, metabolism, behavior change]\n"
-        "- Counseling strategies: [Therapeutic approaches used, motivational interviewing, psychoeducation]\n\n"
+    "### Follow-Up Actions\n"
+    "[Numbered list for sequential tasks; bullets for non-sequential items]\n\n"
 
-        "**Monitoring and Evaluation:**\n"
-        "- Progress evaluation: [Current symptoms, improvements, tracking methods]\n"
-        "- Reviewing goals and outcomes: [Acknowledgment of progress and setbacks]\n"
-        "- Follow-up care plan: [Specific action items, exercise plans, next appointment]\n\n"
+    "### Monitoring Needs\n"
+    "[Parameters requiring ongoing surveillance]\n\n"
 
-        "---\n\n"
+    "---\n\n"
 
-        "## Brief Summary\n"
-        "[200-300 words]\n"
-        "**Assessment:**\n"
-        "- Patient's personal history: [Condensed version with abbreviations where appropriate (Hx, ~)]\n"
-        "- Anthropometric data: [Weight and changes]\n"
-        "- Dietary history: [Key dietary events and patterns]\n"
-        "- Physical activity patterns: [Current status and history]\n\n"
+    "## Goldilocks Summary\n"
+    "[200–350 words | Balanced clinical detail for standard documentation, must stick to the word count]\n\n"
 
-        "**Diagnosis:**\n"
-        "[List possible conditions]\n\n"
+    "**Assessment:**\n"
+    "Patient's personal history\n"
+    "Anthropometric data\n"
+    "Dietary history\n"
+    "Physical activity patterns\n\n"
 
-        "**Intervention:**\n"
-        "- Food and/or nutrient delivery: [Abbreviated recommendations]\n"
-        "- Education on specific nutrition guidelines: [Key educational points]\n"
-        "- Counseling strategies: [Brief description of approach]\n"
-        "- Coordination of nutrition care: [Any care coordination notes]\n\n"
+    "**Diagnosis:**\n"
+    "[Working diagnoses and differential considerations]\n\n"
 
-        "**Monitoring and Evaluation:**\n"
-        "- Progress evaluation: [Tracking methods]\n"
-        "- Reviewing goals and outcomes: [Specific goals]\n"
-        "- Follow-up care plan: [Next steps and appointment]\n\n"
+    "**Intervention:**\n"
+    "Food and/or nutrient delivery\n"
+    "Education on specific nutrition guidelines\n"
+    "Counseling strategies\n\n"
 
-        "---\n\n"
+    "**Monitoring and Evaluation:**\n"
+    "Progress evaluation\n"
+    "Reviewing goals and outcomes\n"
+    "Follow-up care plan\n\n"
 
-        "## Detailed Summary\n"
-        "[400-500 words]\n"
-        "**Assessment:**\n"
-        "- Patient's personal history: [Comprehensive personal history with more context and details]\n"
-        "- Anthropometric data: [Weight with context about changes]\n"
-        "- Dietary history: [Detailed dietary patterns, specific meals, symptoms, preferences]\n"
-        "- Physical activity patterns, preferences, and limitations: [Comprehensive activity history]\n\n"
+    "---\n\n"
 
-        "**Diagnosis:**\n"
-        "[Detailed list of possible conditions with descriptive context]\n\n"
+    "## Brief Summary\n"
+    "[150–300 words | Condensed overview using standard abbreviations, must stick to the word count]\n\n"
 
-        "**Intervention:**\n"
-        "- Food and/or nutrient delivery: [Detailed recommendations with examples]\n"
-        "- Education on specific nutrition guidelines, physical activity, health behaviors or other nutritional advice: [Comprehensive educational content with explanations]\n"
-        "- Counseling strategies: [Specific therapeutic approaches used]\n\n"
+    "**Assessment:**\n"
+    "Essential patient background\n"
+    "Key anthropometric data\n"
+    "Critical dietary history\n"
+    "Physical activity patterns\n\n"
 
-        "**Monitoring and Evaluation:**\n"
-        "- Progress evaluation: [How progress will be tracked]\n"
-        "- Reviewing goals and outcomes: [Specific accomplishments and acknowledgments]\n"
-        "- Follow-up care plan: [Detailed plan with timing and specifics]\n\n"
+    "**Diagnosis:**\n"
+    "[Primary conditions and concerns]\n\n"
 
-        "---\n\n"
+    "**Intervention:**\n"
+    "Core recommendations\n"
+    "Education on nutrition guidelines\n"
+    "Counseling strategies\n"
+    "Coordination of nutrition care\n\n"
 
-        "## Super Detailed Summary\n"
-        "[500-600 words]\n"
-        "**Assessment:**\n"
-        "- Patient's personal history: [Extremely comprehensive with patient quotes and specific details]\n"
-        "- Anthropometric data: [Weight with full context and patient's own descriptions]\n"
-        "- Dietary history: [Extensive detail including patient quotes, specific symptoms, emotional responses]\n"
-        "- Physical activity patterns, preferences, and limitations: [Complete history with specific details]\n\n"
+    "**Monitoring and Evaluation:**\n"
+    "Progress tracking\n"
+    "Reviewing goals and outcomes\n"
+    "Follow-up care plan\n\n"
 
-        "**Diagnosis:**\n"
-        "[Comprehensive list with full medical terminology and context]\n\n"
+    "---\n\n"
 
-        "**Intervention:**\n"
-        "- Food and/or nutrient delivery: [Extensive recommendations with multiple options and details]\n"
-        "- Education on specific nutrition guidelines, physical activity, health behaviors or other nutritional advice: [Complete educational content with patient quotes and detailed explanations]\n"
-        "- Counseling strategies: [Detailed description of therapeutic approaches]\n\n"
+    "## Detailed Summary\n"
+    "[300–400 words | Comprehensive clinical narrative with context, must stick to the word count.]\n\n"
 
-        "**Monitoring and Evaluation:**\n"
-        "- Progress evaluation: [Detailed current status with patient quotes]\n"
-        "- Reviewing goals and outcomes: [Complete acknowledgment with context]\n"
-        "- Follow-up care plan: [Comprehensive plan with specific timing and tracking methods]\n\n"
+    "**Assessment:**\n"
+    "Thorough patient background\n"
+    "Anthropometric data with interpretation\n"
+    "Detailed dietary patterns and examples\n"
+    "Physical activity profile and limitations\n\n"
 
-        "---\n\n"
+    "**Diagnosis:**\n"
+    "[Comprehensive diagnostic impressions]\n\n"
 
-        "## SOAP Note\n"
-        "**Client/Patient Name:** <confidential>  \n"
-        "**Assessment Date:** <confidential>  \n"
-        "**Submitted By:** <confidential>\n\n"
-        "### Subjective\n"
-        "[Patient's reported symptoms and history]\n\n"
-        
-        "### Objective\n"
-        "[Physical findings, vital signs - consider table for vitals]\n\n"
-        
-        "### Assessment\n"
-        "[Clinical impression, use bullet points, keep it detailed]\n\n"
-        
-        "### Plan\n"
-        "[Use bullet points for action items]\n\n"
+    "**Intervention:**\n"
+    "Detailed nutrition prescriptions\n"
+    "Education and counseling strategies\n\n"
 
-        "---\n\n"
+    "**Monitoring and Evaluation:**\n"
+    "Detailed progress tracking\n"
+    "Reviewing goals and outcomes\n"
+    "Follow-up timeline\n\n"
 
-        "MARKDOWN FORMATTING GUIDELINES:\n"
-        "- Use # for title, ## for main sections, ### for subsections\n"
-        "- Use Markdown tables for structured data (medications, vitals, lab results)\n"
-        "- Use - for unordered bullet points\n"
-        "- Use 1., 2., 3. for numbered lists (start from 1 for each section)\n"
-        "- Use **bold** for section headers and important findings\n"
-        "- Use *italic* for patient quotes or emphasis\n"
-        "- Use --- to separate major sections\n"
-        "- Use blank lines between sections\n"
-        )
+    "---\n\n"
+
+    "## Super Detailed Summary\n"
+    "[400–500 words | Maximum clinical detail including patient quotes when documented, must stick to the word count]\n\n"
+
+    "**Assessment:**\n"
+    "Exhaustive patient history\n"
+    "Complete anthropometric context\n"
+    "Extensive dietary history with symptoms and emotional responses\n"
+    "Physical activity history, preferences, and limitations\n\n"
+
+    "**Diagnosis:**\n"
+    "[Complete diagnostic formulation with clinical reasoning]\n\n"
+
+    "**Intervention:**\n"
+    "Comprehensive nutrition strategies with rationale\n"
+    "Education and counseling documentation\n\n"
+
+    "**Monitoring and Evaluation:**\n"
+    "Detailed progress evaluation\n"
+    "Reviewing goals and outcomes\n"
+    "Follow-up metrics and timelines\n\n"
+
+    "---\n\n"
+
+    "## SOAP Note\n"
+    "[200–300 words | Entire SOAP section combined]\n\n"
+
+    "**Client/Patient Name:** <confidential>\n"
+    "**Assessment Date:** <confidential>\n"
+    "**Submitted By:** <confidential>\n\n"
+
+    "### Subjective\n"
+    "[Patient-reported symptoms, concerns, and relevant history]\n\n"
+
+    "### Objective\n"
+    "[Observable findings, measurements, and vital signs when documented]\n\n"
+
+    "### Assessment\n"
+    "[Clinical impressions and diagnostic reasoning]\n\n"
+
+    "### Plan\n"
+    "[Bulleted action items with interventions and follow-up]\n\n"
+
+    "---\n\n"
+
+    "## MARKDOWN FORMATTING STANDARDS\n"
+    "Headers: # (title), ## (main sections), ### (subsections)\n"
+    "Tables: Use Markdown tables for structured clinical data (medications, vitals, labs)\n"
+    "Lists: Use - for bullets and 1., 2., 3. for numbered lists (restart numbering per section)\n"
+    "Emphasis: Use **bold** for important findings and italic for patient quotes\n"
+    "Spacing: Leave blank lines between sections for readability\n\n"
+
+    "Before finalizing, briefly review each section and adjust wording so it fits comfortably within its intended word range while remaining clinically accurate and complete.\n"
+    "Return only the final Markdown output."
+)
     
     # GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
     # HF_MODEL = "openai/gpt-oss-20b:groq"
@@ -266,7 +276,7 @@ def generate_clinical_summary(transcript_text, use_masked_data=False):
         )
     )
 
-    return response.text
+    return response.text if response else ""
 
 if __name__ == "__main__":
     # Configuration
